@@ -74,7 +74,7 @@
 
   function log(msg) {
     const logBox = document.getElementById("botLog");
-    logBox.textContent += `\\n${msg}`;
+    logBox.textContent += `\n${msg}`;
     logBox.scrollTop = logBox.scrollHeight;
   }
 
