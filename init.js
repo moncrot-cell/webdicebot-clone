@@ -1,113 +1,117 @@
-// == WebDiceBot UI Inject Final - BCH.GAMES Real BET ==
-// By ChatGPT for moncrot-cell — Versi stabil jalan real
-
-(async () => {
-  const css = `
-    #dicebot-ui {
-      position: fixed; top: 10px; left: 10px; z-index: 9999;
-      background: #111; color: white; padding: 15px;
-      border-radius: 8px; box-shadow: 0 0 10px #0f0;
-      font-family: monospace;
-    }
-    #dicebot-ui input { width: 100px; margin-bottom: 5px; }
-    #dicebot-ui button { margin-top: 5px; width: 100%; }
-    #logbox { background: black; padding: 5px; height: 100px; overflow: auto; margin-top: 5px; }
-  `;
+// == INIT.JS V1.1 BCH.GAMES BOT UI INJECT ==
+(function () {
   const style = document.createElement('style');
-  style.textContent = css;
+  style.innerHTML = `
+    #wdb-ui {
+      position: fixed;
+      top: 20px; right: 20px;
+      background: #111; color: white;
+      z-index: 9999;
+      box-shadow: 0 0 10px #0ff;
+      padding: 15px;
+      border-radius: 10px;
+      font-family: sans-serif;
+    }
+    #wdb-ui input { width: 100px; margin-bottom: 5px; }
+    #wdb-ui button { margin: 3px; }
+    #wdb-log {
+      max-height: 150px; overflow-y: auto;
+      font-size: 11px;
+      background: #000;
+      color: #0f0;
+      padding: 5px;
+      margin-top: 10px;
+    }
+  `;
   document.head.appendChild(style);
 
   const ui = document.createElement('div');
-  ui.id = 'dicebot-ui';
+  ui.id = 'wdb-ui';
   ui.innerHTML = `
-    <label>🎲 Basebet: <input id="basebet" value="0.00000001" /></label><br/>
-    <label>🎯 Chance: <input id="chance" value="50" /></label><br/>
-    <button id="startbot">▶️ Start</button>
-    <button id="stopbot">⏹️ Stop</button>
-    <pre id="logbox"></pre>
+    <h3 style="margin-bottom:10px;">🎲 WebDiceBot</h3>
+    <label>Base Bet: <input id="basebet" value="0.00000001" /></label><br/>
+    <label>Chance: <input id="chance" value="50" /></label><br/>
+    <button id="startBtn">START</button>
+    <button id="stopBtn">STOP</button>
+    <div id="wdb-log">Bot Siap.</div>
   `;
   document.body.appendChild(ui);
 
   let running = false;
-  let basebet = 0.00000001;
-  let chance = 50;
-  let nextbet = basebet;
-  let bethigh = true;
-  const logbox = document.getElementById('logbox');
+  let interval;
+  let previousBet = 0;
 
   function log(msg) {
-    console.log(msg);
-    logbox.textContent += msg + '\n';
-    logbox.scrollTop = logbox.scrollHeight;
+    const box = document.getElementById('wdb-log');
+    box.innerHTML = `🕹️ ${msg}<br/>` + box.innerHTML;
   }
 
-  function sleep(ms) {
-    return new Promise(r => setTimeout(r, ms));
-  }
+  function getGameElements() {
+    const amtInput = document.querySelector('input[type="number"]');
+    const chanceInput = [...document.querySelectorAll('input')].find(el => el.placeholder?.includes('%') || el.value?.includes('.00'));
+    const betBtn = [...document.querySelectorAll('button')].find(btn => btn.textContent.toLowerCase().includes('bet') || btn.textContent.toLowerCase().includes('roll'));
+    const highBtn = [...document.querySelectorAll('button')].find(btn => btn.textContent.toLowerCase().includes('high') || btn.textContent.toLowerCase().includes('above'));
 
-  function clickBet() {
-    const amtInput = document.querySelector('input[name="bet-amount"]');
-    const chanceInput = document.querySelector('input[name="chance"]');
-    const hiBtn = [...document.querySelectorAll('button')].find(btn => btn.innerText.trim().toUpperCase() === 'HIGH');
-    const loBtn = [...document.querySelectorAll('button')].find(btn => btn.innerText.trim().toUpperCase() === 'LOW');
-
-    if (!amtInput || !chanceInput || !hiBtn || !loBtn) {
+    if (!amtInput || !chanceInput || !highBtn || !betBtn) {
       log("❌ Form atau tombol tidak ditemukan!");
-      return;
+      return null;
     }
 
-    amtInput.value = nextbet;
-    amtInput.dispatchEvent(new Event("input", { bubbles: true }));
-
-    chanceInput.value = chance;
-    chanceInput.dispatchEvent(new Event("input", { bubbles: true }));
-
-    const clickEvent = new MouseEvent("click", { bubbles: true, cancelable: true });
-
-    if (bethigh) {
-      hiBtn.dispatchEvent(clickEvent);
-      log("🎯 Klik HIGH");
-    } else {
-      loBtn.dispatchEvent(clickEvent);
-      log("🎯 Klik LOW");
-    }
+    return { amtInput, chanceInput, highBtn, betBtn };
   }
 
-  async function runBot() {
-    basebet = parseFloat(document.getElementById('basebet').value);
-    chance = parseFloat(document.getElementById('chance').value);
-    nextbet = basebet;
-    bethigh = true;
+  async function clickButton(el) {
+    el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 30));
+    el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+  }
+
+  async function startBot() {
+    const elements = getGameElements();
+    if (!elements) return;
+
+    const basebet = parseFloat(document.getElementById('basebet').value);
+    const baseChance = parseFloat(document.getElementById('chance').value);
+
+    let nextbet = basebet;
+    let lastPayout = 0;
+
     running = true;
-    log("🚀 Bot dimulai");
+    log("Bot dimulai...");
 
-    while (running) {
-      clickBet();
-      await sleep(2000); // tunggu hasil
+    interval = setInterval(async () => {
+      if (!running) return;
 
-      // Ambil hasil payout dari elemen hasil
-      let resultText = document.querySelector('.sc-egnSlO')?.textContent || '';
-      let payout = parseFloat(resultText.replace('x', '')) || 0;
-      let win = payout >= 1.01;
+      // Cek hasil bet terakhir
+      const payoutDiv = [...document.querySelectorAll('div')]
+        .find(el => el.textContent.startsWith('x') && el.textContent.includes('.'));
 
-      if (win) {
-        nextbet = basebet;
-        log("✅ WIN — Reset to base");
-      } else {
-        nextbet *= 2;
-        log("❌ LOSE — Nextbet: " + nextbet.toFixed(8));
+      const payout = payoutDiv ? parseFloat(payoutDiv.textContent.replace('x', '')) : null;
+
+      if (payout && payout !== lastPayout) {
+        const win = payout > 1;
+        lastPayout = payout;
+        log(`${win ? '✅ WIN' : '❌ LOSE'} - Reset to base`);
+        nextbet = win ? basebet : previousBet * 2;
       }
 
-      await sleep(500); // delay antar bet
-    }
+      // Set input
+      elements.amtInput.value = nextbet.toFixed(8);
+      elements.chanceInput.value = baseChance.toFixed(2);
 
-    log("⏹️ Bot dihentikan");
+      // Klik tombol BET
+      await clickButton(elements.betBtn);
+
+      previousBet = nextbet;
+    }, 2500); // jeda antar bet
   }
 
-  document.getElementById('startbot').onclick = () => {
-    if (!running) runBot();
-  };
-  document.getElementById('stopbot').onclick = () => {
+  function stopBot() {
+    clearInterval(interval);
     running = false;
-  };
+    log("🛑 Bot dihentikan");
+  }
+
+  document.getElementById('startBtn').onclick = startBot;
+  document.getElementById('stopBtn').onclick = stopBot;
 })();
