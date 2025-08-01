@@ -1,49 +1,105 @@
-// BCH.games Bot Final INIT.JS // Versi lengkap: auto play, Lua, giveaway, chat, UI popup (async () => { const fengariURL = 'https://unpkg.com/fengari-web/dist/fengari-web.js'; const luaScriptDefault = ` -- Contoh Lua: Naikkan bet setelah kalah chance = 50 basebet = 0.00000001 nextbet = basebet bethigh = true
+// === FULLBOT.JS ===
+(function() {
+  // Inject UI
+  const css = document.createElement('style');
+  css.textContent = `
+    #bot-ui {
+      position: fixed; top: 80px; right: 20px; z-index: 9999;
+      background: #111; color: white; padding: 15px; border-radius: 10px;
+      width: 300px; font-family: monospace; box-shadow: 0 0 10px #0f0;
+    }
+    #bot-ui textarea { width: 100%; height: 100px; margin-top: 5px; background: #222; color: #0f0; }
+    #bot-ui button { margin-top: 10px; width: 100%; background: #0f0; color: black; font-weight: bold; }
+    #bot-log { height: 80px; overflow-y: auto; font-size: 12px; margin-top: 10px; background: #000; padding: 5px; }
+  `;
+  document.head.appendChild(css);
 
-function dobet() if win then nextbet = basebet else nextbet = nextbet * 2 end end `;
+  const ui = document.createElement('div');
+  ui.id = 'bot-ui';
+  ui.innerHTML = `
+    <div><b>💠 BCH Bot Dice</b></div>
+    <textarea id="lua-code">nextbet = 0.00000001\nchance = 50\nfunction dobet()\n  if win then\n    nextbet = 0.00000001\n  else\n    nextbet *= 2\n  end\nend</textarea>
+    <button id="start-bot">▶️ Start Bot</button>
+    <button id="stop-bot">⛔ Stop Bot</button>
+    <div id="bot-log"></div>
+  `;
+  document.body.appendChild(ui);
 
-// Inject Fengari (Lua engine) if (!window.fengariLoaded) { const fengariScript = document.createElement('script'); fengariScript.src = fengariURL; fengariScript.onload = () => (window.fengariLoaded = true); document.head.appendChild(fengariScript); while (!window.fengariLoaded) await new Promise(r => setTimeout(r, 100)); }
+  const log = (msg) => {
+    const box = document.getElementById('bot-log');
+    box.innerHTML += `<div>${msg}</div>`;
+    box.scrollTop = box.scrollHeight;
+  };
 
-// Create UI const panel = document.createElement('div'); panel.innerHTML = <div id="bot-ui" style="position: fixed; top: 50px; right: 50px; background: #1c1c1c; color: white; padding: 20px; border-radius: 10px; z-index: 9999; width: 320px; font-family: sans-serif;"> <h3 style="margin-top: 0;">🎲 BCH Bot Panel</h3> <label>Base Bet: <input id="base-bet" type="number" value="0.00000001" step="any" style="width:100%;"></label><br><br> <label>Chance: <input id="chance" type="number" value="50" step="any" style="width:100%;"></label><br><br> <textarea id="lua-editor" style="width:100%; height:120px;">${luaScriptDefault}</textarea><br><br> <button id="start-bot">▶️ Start</button> <button id="stop-bot">⛔ Stop</button> <pre id="bot-log" style="background:#000; padding:10px; height:100px; overflow:auto;"></pre> </div>; document.body.appendChild(panel);
+  // === Lua Setup
+  const L = fengari.lauxlib.luaL_newstate();
+  fengari.lualib.luaL_openlibs(L);
 
-const log = msg => { const el = document.getElementById('bot-log'); el.textContent += > ${msg}\n; el.scrollTop = el.scrollHeight; };
+  const loadLua = () => {
+    const code = document.getElementById('lua-code').value;
+    fengari.lauxlib.luaL_dostring(L, fengari.to_luastring(code));
+  };
 
-let running = false, nextLuaRun = 0; const delay = ms => new Promise(r => setTimeout(r, ms));
+  // === Auto Play Dice
+  let playing = false;
+  let interval;
+  const playDice = () => {
+    if (!playing) return;
+    const nextbet = document.querySelector('input[name="amount"]');
+    const chance = document.querySelector('input[name="chance"]');
+    const high = document.querySelector('input[name="betHigh"]');
 
-async function clickGiveawayIfAvailable() { const joinBtn = [...document.querySelectorAll('div')].find(d => d.textContent.trim() === 'Join'); if (joinBtn) joinBtn.click(); }
+    try {
+      fengari.lauxlib.luaL_dostring(L, fengari.to_luastring("dobet()"));
+    } catch (e) {
+      log("Lua Error: " + e.message);
+      return;
+    }
 
-async function sendChatMessage(text) { const input = document.querySelector('input[placeholder="Type your message"]'); const send = [...document.querySelectorAll('div')].find(d => d.textContent === 'SEND'); if (input && send) { input.value = text; input.dispatchEvent(new Event('input', { bubbles: true })); send.click(); } }
+    const _nextbet = fengari.lua.lua_tojsstring(L, fengari.lua.lua_getglobal(L, "nextbet"));
+    const _chance = fengari.lua.lua_tojsstring(L, fengari.lua.lua_getglobal(L, "chance"));
+    const _high = fengari.lua.lua_tojsstring(L, fengari.lua.lua_getglobal(L, "bethigh"));
 
-async function updateBetForm(bet, chance) { const betInput = document.querySelector('input[name="stake"]'); const chanceInput = document.querySelector('input[name="target"]'); if (betInput) betInput.value = bet; if (chanceInput) chanceInput.value = chance; }
+    if (nextbet) nextbet.value = _nextbet || "0.00000001";
+    if (chance) chance.value = _chance || "50";
+    if (high && _high !== null) high.checked = (_high === "true");
 
-async function clickBet() { const btn = [...document.querySelectorAll('div')].find(d => d.textContent === 'START AUTOPLAY'); if (btn) btn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); }
+    // Click bet
+    const btn = document.querySelector('button[data-bet-button]');
+    if (btn) btn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  };
 
-async function getLastResult() { const payoutEl = document.querySelector('[title^="x"]'); if (!payoutEl) return null; const multiplier = parseFloat(payoutEl.textContent.replace('x', '')); return multiplier >= 1 ? 'win' : 'lose'; }
+  // Start / Stop
+  document.getElementById("start-bot").onclick = () => {
+    loadLua();
+    playing = true;
+    interval = setInterval(playDice, 3000);
+    log("▶️ Bot Started");
+  };
+  document.getElementById("stop-bot").onclick = () => {
+    clearInterval(interval);
+    playing = false;
+    log("⛔ Bot Stopped");
+  };
 
-async function runBotLoop() { const luaCode = document.getElementById('lua-editor').value; const luaEnv = fengari.load(luaCode); let win = false;
+  // === Auto Giveaway Claim
+  setInterval(() => {
+    const joinBtn = [...document.querySelectorAll('div')].find(el => el.textContent.trim() === "Join");
+    if (joinBtn && joinBtn.offsetParent !== null) {
+      joinBtn.click();
+      log("🎁 Auto-claimed giveaway");
+    }
+  }, 5000);
 
-window.chance = parseFloat(document.getElementById('chance').value);
-window.basebet = parseFloat(document.getElementById('base-bet').value);
-window.nextbet = window.basebet;
-window.bethigh = true;
+  // === Auto Chat (anti-spam)
+  setInterval(() => {
+    const input = document.querySelector('input[placeholder="Type your message"]');
+    const sendBtn = [...document.querySelectorAll("button")].find(el => el.textContent.trim() === "SEND");
+    if (input && sendBtn && input.value === "") {
+      input.value = "yohohohhohoho";
+      sendBtn.click();
+      log("💬 Sent chat");
+    }
+  }, 90000); // 90 detik biar aman anti spam
 
-while (running) {
-  await updateBetForm(window.nextbet, window.chance);
-  await clickBet();
-  await delay(3000);
-  const result = await getLastResult();
-  win = result === 'win';
-  window.win = win;
-  log(win ? 'WIN' : 'LOSE');
-  luaEnv(); // run dobet()
-
-  await clickGiveawayIfAvailable();
-  if (Math.random() < 0.1) await sendChatMessage('yohohohhohoho');
-}
-
-}
-
-document.getElementById('start-bot').onclick = () => { if (!running) { running = true; runBotLoop(); } };
-
-document.getElementById('stop-bot').onclick = () => { running = false; log('Stopped.'); }; })();
-
+})();
